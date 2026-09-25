@@ -1,0 +1,33 @@
+{
+  "name": "webcam-vr-hub",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Webcam VR Hub - 7 Motion-Tracked 3D Games + Hole In The Wall (Lovable Compatible, 100% Free & Zero-Cost)",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "start": "python server.py"
+  },
+  "dependencies": {
+    "three": "^0.160.0"
+  },
+  "devDependencies": {
+    "vite": "^5.0.0"
+  },
+  "keywords": [
+    "vr",
+    "webcam",
+    "webcam-vr",
+    "motion-tracking",
+    "mediapipe",
+    "threejs",
+    "hole-in-the-wall",
+    "lightsaber",
+    "boxing",
+    "lovable"
+  ],
+  "author": "Antigravity & User",
+  "license": "MIT"
+}

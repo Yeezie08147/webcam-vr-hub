@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Webcam VR Game Hub</title>
+    <link rel="stylesheet" href="css/style.css">
+    
+    <!-- Three.js (Local with CDN Fallback) -->
+    <script src="lib/three.min.js"></script>
+    <script>
+        if (typeof THREE === 'undefined') {
+            document.write('<script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"><\/script>');
+        }
+    </script>
+
+    <!-- MediaPipe Camera Utils & Hands & FaceMesh -->
+    <script src="lib/camera_utils.js"></script>
+    <script>
+        if (typeof Camera === 'undefined') {
+            document.write('<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"><\/script>');
+        }
+    </script>
+    <script src="lib/hands.js"></script>
+    <script>
+        if (typeof Hands === 'undefined') {
+            document.write('<script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"><\/script>');
+        }
+    </script>
+    <script src="lib/face_mesh.js"></script>
+    <script>
+        if (typeof FaceMesh === 'undefined') {
+            document.write('<script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js"><\/script>');
+        }
+    </script>
+</head>
+<body>
+
+    <!-- WebGL Three.js Container -->
+    <div id="canvas-container"></div>
+
+    <!-- Red Damage Flash -->
+    <div id="damage-flash"></div>
+
+    <!-- Hidden Video Source for Webcam Stream -->
+    <video id="webcam-video" style="display:none;" playsinline muted></video>
+
+    <!-- Splash / Calibration Screen -->
+    <div id="splash-screen">
+        <div class="splash-icon">🥽</div>
+        <h1 class="splash-title">WEBCAM VR GAME HUB</h1>
+        <p class="splash-subtitle">
+            Play high-energy motion VR games using <strong>only your webcam</strong>.<br>
+            No VR headset needed! Stand or sit in view of your camera. Your hands and head become the controllers.
+        </p>
+        <button id="start-hub-btn" class="start-btn interactive">🚀 ENTER VR HUB</button>
+        <p id="splash-status" style="font-size: 13px; color: #64748b;">Requires webcam access for motion tracking.</p>
+    </div>
+
+    <!-- Hub UI Overlay -->
+    <div id="hub-overlay" class="ui-layer" style="display: none;">
+        <!-- Header -->
+        <header class="hub-header interactive">
+            <div class="logo-area">
+                <div class="vr-icon-badge">⚡</div>
+                <div>
+                    <div class="logo-title">WEBCAM VR HUB</div>
+                    <div class="logo-subtitle">Motion-Tracked Holographic Games</div>
+                </div>
+            </div>
+
+            <div class="hub-controls">
+                <button id="quick-hole-btn" class="cyber-btn" style="background: linear-gradient(135deg, #ffd700, #ff8800); color: #000; font-weight: bold;" title="Play 3D Hole In The Wall VR">🧱 HOLE IN THE WALL</button>
+                <button id="calibrate-btn" class="cyber-btn" title="Calibrate Head & Neutral Pose">🎯 RECALIBRATE</button>
+                <button id="mute-btn" class="cyber-btn" title="Mute Audio">🔊 SOUND: ON</button>
+                <button id="settings-btn" class="cyber-btn">⚙️ SETTINGS</button>
+            </div>
+        </header>
+
+        <!-- Center Guidance Banner -->
+        <div class="hub-guide-banner">
+            <div class="pulse-dot"></div>
+            <span>Move your hand to aim the cursor • <strong>Pinch (thumb + index)</strong> or click to launch a game</span>
+        </div>
+
+        <!-- Footer Info -->
+        <div style="display:flex; justify-content:space-between; align-items:flex-end;">
+            <div style="font-size: 13px; color: #475569; letter-spacing: 1px;">
+                CROSS HANDS TO DEFEND • DUCK TO DODGE • SWING TO SLICE
+            </div>
+        </div>
+    </div>
+
+    <!-- In-Game HUD -->
+    <div id="game-hud" class="ui-layer">
+        <div class="game-hud-top interactive">
+            <div class="game-info-card">
+                <button id="exit-hub-btn" class="cyber-btn danger">◀ EXIT TO HUB</button>
+                <div class="hud-title" id="game-title-hud">GAME ACTIVE</div>
+            </div>
+
+            <div class="game-info-card">
+                <div>
+                    <div class="hud-score-label">SCORE</div>
+                    <div class="hud-score-value" id="hud-score">0</div>
+                </div>
+                <div class="hud-combo-badge" id="hud-combo"></div>
+                <div>
+                    <div class="hud-score-label">SHIELD / HEALTH</div>
+                    <div class="hp-container">
+                        <div class="hp-bar" id="hud-hp-bar"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Embedded Hole In The Wall Game Frame Container -->
+    <div id="hole-game-container" style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; z-index: 95; background: #000;">
+        <div style="position: absolute; top: 12px; left: 20px; z-index: 1001; display: flex; gap: 14px; align-items: center;">
+            <button id="exit-hole-frame-btn" class="cyber-btn danger" style="padding: 10px 22px; font-size: 14px; box-shadow: 0 0 20px rgba(255,0,85,0.7); cursor: pointer;">◀ EXIT TO VR HUB</button>
+            <span style="color: #ffd700; font-family: 'Orbitron', sans-serif; font-size: 13px; font-weight: bold; background: rgba(10,16,32,0.85); padding: 8px 16px; border-radius: 8px; border: 1px solid #ffd700; letter-spacing: 1px;">
+                🧱 HOLE IN THE WALL (GITHUB EDITION)
+            </span>
+        </div>
+        <iframe id="hole-game-iframe" style="width: 100%; height: 100%; border: none;" allow="camera; microphone"></iframe>
+    </div>
+
+    <!-- Tracking Mirror HUD (Bottom Right) -->
+    <div id="tracking-mirror-container" class="tracking-hud interactive">
+        <div class="tracking-hud-header">
+            <span>📷 TRACKING FEED</span>
+            <span id="mirror-toggle-btn" style="cursor: pointer;" title="Minimize Mirror">➖</span>
+        </div>
+        <canvas id="mirror-canvas" class="tracking-canvas" width="320" height="240"></canvas>
+    </div>
+
+    <!-- Settings Modal -->
+    <div id="settings-modal" class="cyber-modal interactive">
+        <div class="modal-header">
+            <div class="modal-title">⚙️ VR HUB SETTINGS</div>
+            <button id="close-settings-btn" class="cyber-btn" style="padding: 4px 10px;">✕</button>
+        </div>
+        <div class="setting-row">
+            <span>BGM Volume</span>
+            <input type="range" id="bgm-slider" class="setting-slider" min="0" max="1" step="0.05" value="0.35">
+        </div>
+        <div class="setting-row">
+            <span>SFX Volume</span>
+            <input type="range" id="sfx-slider" class="setting-slider" min="0" max="1" step="0.05" value="0.7">
+        </div>
+        <div class="setting-row">
+            <span>Mirror HUD</span>
+            <button id="toggle-mirror-vis-btn" class="cyber-btn">SHOW</button>
+        </div>
+        <div class="setting-row">
+            <span>Head Parallax</span>
+            <button id="toggle-parallax-btn" class="cyber-btn">ENABLED</button>
+        </div>
+        <button id="reset-calibration-btn" class="cyber-btn" style="width: 100%; margin-top: 10px;">RECENTER WEBCAM & CALIBRATE</button>
+    </div>
+
+    <!-- Game Scripts -->
+    <script src="js/audio.js"></script>
+    <script src="js/tracker.js"></script>
+    <script src="js/games/saber_game.js"></script>
+    <script src="js/games/dodge_game.js"></script>
+    <script src="js/games/boxing_game.js"></script>
+    <script src="js/games/chrono_game.js"></script>
+    <script src="js/games/spell_game.js"></script>
+    <script src="js/games/fruit_game.js"></script>
+    <script src="js/games/hole_game.js"></script>
+    <script src="js/hub.js"></script>
+
+    <!-- Bootstrap Script -->
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const container = document.getElementById('canvas-container');
+            const videoElem = document.getElementById('webcam-video');
+            const mirrorCanvas = document.getElementById('mirror-canvas');
+            const startBtn = document.getElementById('start-hub-btn');
+            const splashScreen = document.getElementById('splash-screen');
+            const splashStatus = document.getElementById('splash-status');
+            const hubOverlay = document.getElementById('hub-overlay');
+            const exitHubBtn = document.getElementById('exit-hub-btn');
+            const calibrateBtn = document.getElementById('calibrate-btn');
+            const muteBtn = document.getElementById('mute-btn');
+            const settingsBtn = document.getElementById('settings-btn');
+            const closeSettingsBtn = document.getElementById('close-settings-btn');
+            const settingsModal = document.getElementById('settings-modal');
+            const bgmSlider = document.getElementById('bgm-slider');
+            const sfxSlider = document.getElementById('sfx-slider');
+            const mirrorToggleBtn = document.getElementById('mirror-toggle-btn');
+            const trackingMirrorContainer = document.getElementById('tracking-mirror-container');
+
+            // Initialize 3D VR Hub
+            window.vrHub.init(container);
+
+            // Start button click
+            startBtn.addEventListener('click', async () => {
+                splashStatus.textContent = 'Connecting to webcam & initializing AI vision models...';
+                startBtn.disabled = true;
+                startBtn.textContent = '⌛ INITIALIZING...';
+
+                try {
+                    // Initialize audio engine
+                    window.soundFx.init();
+
+                    // Initialize webcam & computer vision
+                    await window.visionTracker.init(videoElem, mirrorCanvas);
+
+                    // Reveal Hub
+                    splashScreen.style.display = 'none';
+                    hubOverlay.style.display = 'flex';
+
+                    // Play Welcome sound
+                    window.soundFx.playUiClick();
+                } catch (err) {
+                    console.error('Initialization failed:', err);
+                    splashStatus.textContent = 'Error: Could not access webcam. Please ensure your camera is connected and permissions are allowed.';
+                    startBtn.disabled = false;
+                    startBtn.textContent = 'RETRY WEBCAM';
+                }
+            });
+
+            // Quick Hole In The Wall Launcher
+            const quickHoleBtn = document.getElementById('quick-hole-btn');
+            if (quickHoleBtn) {
+                quickHoleBtn.addEventListener('click', () => {
+                    window.vrHub.launchGame('hole');
+                });
+            }
+
+            // Exit to Hub
+            exitHubBtn.addEventListener('click', () => {
+                window.vrHub.exitToHub();
+                if (window.soundFx) window.soundFx.playUiClick();
+            });
+
+            // Exit Hole Frame to Hub
+            const exitHoleFrameBtn = document.getElementById('exit-hole-frame-btn');
+            if (exitHoleFrameBtn) {
+                exitHoleFrameBtn.addEventListener('click', () => {
+                    window.vrHub.exitToHub();
+                    if (window.soundFx) window.soundFx.playUiClick();
+                });
+            }
+
+            // Recalibrate
+            calibrateBtn.addEventListener('click', () => {
+                if (window.visionTracker) {
+                    window.visionTracker.calibrate();
+                    if (window.soundFx) window.soundFx.playUiClick();
+                }
+            });
+
+            // Mute
+            muteBtn.addEventListener('click', () => {
+                if (window.soundFx) {
+                    const isMuted = window.soundFx.toggleMute();
+                    muteBtn.textContent = isMuted ? '🔇 SOUND: OFF' : '🔊 SOUND: ON';
+                }
+            });
+
+            // Settings Modal
+            settingsBtn.addEventListener('click', () => {
+                settingsModal.style.display = 'flex';
+                if (window.soundFx) window.soundFx.playUiClick();
+            });
+
+            closeSettingsBtn.addEventListener('click', () => {
+                settingsModal.style.display = 'none';
+                if (window.soundFx) window.soundFx.playUiClick();
+            });
+
+            // Volume sliders
+            bgmSlider.addEventListener('input', (e) => {
+                if (window.soundFx) window.soundFx.setBgmVolume(parseFloat(e.target.value));
+            });
+
+            sfxSlider.addEventListener('input', (e) => {
+                if (window.soundFx) window.soundFx.setSfxVolume(parseFloat(e.target.value));
+            });
+
+            // Mirror toggle
+            let mirrorMinimized = false;
+            mirrorToggleBtn.addEventListener('click', () => {
+                mirrorMinimized = !mirrorMinimized;
+                mirrorCanvas.style.display = mirrorMinimized ? 'none' : 'block';
+                trackingMirrorContainer.style.height = mirrorMinimized ? '32px' : '180px';
+                mirrorToggleBtn.textContent = mirrorMinimized ? '➕' : '➖';
+            });
+        });
+    </script>
+</body>
+</html>

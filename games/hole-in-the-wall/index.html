@@ -1,0 +1,397 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="X-UA-Compatible" content="ie=edge">
+  <title>Hole in the Wall</title>
+  <link href="https://fonts.googleapis.com/css?family=Indie+Flower&display=swap" rel="stylesheet">
+  <style>
+    body {
+      margin: 0;
+      padding: 0;
+      font-family: 'Indie Flower', cursive;
+    }
+
+    #hud {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      text-align: right;
+    }
+
+    #points-disp {
+      position: absolute;
+      top: 0;
+      left: 0;
+      padding: 10px 10px 0 10px;
+      font-size: 10em;
+      color: white;
+      background-color: yellowgreen;
+      line-height: 1;
+      border-bottom-right-radius: 40px;
+    }
+
+    #fails-disp {
+      position: absolute;
+      top: calc(2em + 15px);
+      left: 0;
+      padding-left: 10px;
+      padding-right: 10px;
+      color: white;
+      background-color: red;
+      font-size: 5em;
+      line-height: 1;
+      border-bottom-right-radius: 20px;
+    }
+
+    #game-over {
+      display: none;
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      height: 50vh;
+      width: 50vw;
+      background: teal;
+      text-align: center;
+      font-size: 6em;
+      line-height: 2em;
+    }
+  </style>
+</head>
+
+<body>
+  <div id="hud">
+    <button id="exit-btn" onclick="if(window.parent !== window && window.parent.vrHub){ window.parent.vrHub.exitToHub(); } else { window.location.href='../../index.html'; }" style="position: absolute; top: 15px; right: 20px; z-index: 9999; background: #ef4444; color: white; border: 2px solid white; padding: 10px 22px; font-size: 1.1rem; font-family: sans-serif; font-weight: bold; border-radius: 8px; cursor: pointer; box-shadow: 0 0 15px rgba(239,68,68,0.7);">◀ EXIT TO VR HUB</button>
+    <label for="pause">Stop</label>
+    <input type="checkbox" id="pause" value="pause">
+    <br>
+    <label for="pose-correct">Simulate correct pose</label>
+    <input type="checkbox" id="pose-correct" value="pause">
+    <div id="points-disp">Score: <span class="points">0</span></div>
+    <div id="fails-disp">Fails: <span id="fails"></span></div>
+    <div id="game-over">
+      You scored: <span class="points">0</span>
+    </div>
+  </div>
+  <div id="main">
+    <video id="video" playsinline style="display: none;"></video>
+    <canvas id="output"></canvas>
+  </div>
+  <img id="spike-img" src="./spike.png" alt="" style="display:none">
+  <!-- <img id="pose" src="./pose1.jpg"> -->
+  <!-- Load TensorFlow.js (Local Offline Bundles) -->
+  <script src="./lib/tf.min.js"></script>
+  <!-- Load Posenet -->
+  <script src="./lib/posenet.min.js"></script>
+  <script src="./lib/posenet-similarity.min.js"></script>
+  <script type="text/javascript">
+    // demo util
+    const color = 'aqua';
+    const boundingBoxColor = 'red';
+    const lineWidth = 2;
+
+    function toTuple({ y, x }) {
+      return [y, x];
+    }
+    // Draws a point on a canvas
+    function drawPoint(ctx, y, x, r, color) {
+      ctx.beginPath();
+      ctx.arc(x, y, r, 0, 2 * Math.PI);
+      ctx.fillStyle = color;
+      ctx.fill();
+    }
+    // Draws a line on a canvas, i.e. a joint
+    function drawSegment([ay, ax], [by, bx], color, scale, ctx, thickness = lineWidth) {
+      ctx.beginPath();
+      ctx.moveTo(ax * scale, ay * scale);
+      ctx.lineTo(bx * scale, by * scale);
+      ctx.lineWidth = thickness;
+      ctx.strokeStyle = color;
+      ctx.stroke();
+    }
+    // Draws a pose skeleton by looking up all adjacent keypoints/joints
+    function drawSkeleton(keypoints, minConfidence, ctx, thickness = lineWidth, scale = 1) {
+      const adjacentKeyPoints =
+        posenet.getAdjacentKeyPoints(keypoints, minConfidence);
+
+      adjacentKeyPoints.forEach((keypoints) => {
+        drawSegment(
+          toTuple(keypoints[0].position), toTuple(keypoints[1].position), color,
+          scale, ctx, thickness);
+      });
+    }
+    // Draws hole pose skeleton
+    function drawSkeletonMatch(holeKeypoints, actualKeypoints, minConfidence, ctx) {
+      const adjacentHoleKeypoints = posenet.getAdjacentKeyPoints(holeKeypoints, minConfidence);
+      const adjacentActualKeypoints = posenet.getAdjacentKeyPoints(actualKeypoints, minConfidence);
+      for (keypoints of adjacentHoleKeyPoints) {
+        drawSegment(toTuple(keypoints[0].position), toTuple(keypoints[1].position))
+      }
+    }
+    // Draw pose keypoints onto a canvas
+    function drawKeypoints(keypoints, minConfidence, ctx, radius = 3, scale = 1) {
+      for (let i = 0; i < keypoints.length; i++) {
+        const keypoint = keypoints[i];
+
+        if (keypoint.score < minConfidence) {
+          continue;
+        }
+
+        const { y, x } = keypoint.position;
+        drawPoint(ctx, y * scale, x * scale, radius, color);
+      }
+    }
+    // Draw the bounding box of a pose. For example, for a whole person standing in an image, the bounding box will begin at the nose and extend to one of ankles
+    function drawBoundingBox(keypoints, ctx, radius = 3) {
+      const boundingBox = posenet.getBoundingBox(keypoints);
+      const bboxWidth = boundingBox.maxX - boundingBox.minX;
+      const bboxHeight = boundingBox.maxY - boundingBox.minY;
+      ctx.rect(
+        boundingBox.minX, boundingBox.minY, boundingBox.maxX - boundingBox.minX,
+        boundingBox.maxY - boundingBox.minY);
+      ctx.strokeStyle = boundingBoxColor;
+      ctx.stroke();
+      // drawPoint(ctx, boundingBox.minY + bboxHeight/2, boundingBox.minX + bboxWidth/2, radius, color);
+    }
+  </script>
+  <script src="./samplePoses.js"></script>
+  <script type="text/javascript">
+    (async function () {
+      const poseImg = document.querySelector('img#pose');
+      const video = document.querySelector('#video');
+      const videoWidth = window.innerWidth;
+      const videoHeight = window.innerHeight;
+
+      // loads camera feed into video source
+      async function setupCamera() {
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+          throw new Error('Browser API navigator.mediaDevices.getUserMedia not available');
+        }
+        const video = document.getElementById('video');
+        video.width = videoWidth;
+        video.height = videoHeight;
+        const stream = await navigator.mediaDevices.getUserMedia({
+          'audio': false,
+          'video': {
+            facingMode: 'user',
+            width: videoWidth,
+            height: videoHeight,
+          },
+        });
+        video.srcObject = stream;
+
+        return new Promise((resolve) => {
+          video.onloadedmetadata = () => {
+            resolve(video);
+          };
+        });
+      }
+
+      // plays video after setup camera
+      async function loadVideo() {
+        const video = await setupCamera();
+        video.play();
+        return video;
+      }
+
+      const defaultQuantBytes = 2;
+      const defaultMobileNetMultiplier = 0.75;
+      const defaultMobileNetStride = 16;
+      const defaultMobileNetInputResolution = 500;
+      const defaultResNetMultiplier = 1.0;
+      const defaultResNetStride = 32;
+      const defaultResNetInputResolution = 250;
+      const guiState = {
+        algorithm: 'single-pose',
+        input: {
+          architecture: 'MobileNetV1',
+          outputStride: defaultMobileNetStride,
+          inputResolution: defaultMobileNetInputResolution,
+          multiplier: defaultMobileNetMultiplier,
+          quantBytes: defaultQuantBytes
+        },
+        singlePoseDetection: {
+          minPoseConfidence: 0.7,
+          minPartConfidence: 0.5,
+        },
+        multiPoseDetection: {
+          maxPoseDetections: 5,
+          minPoseConfidence: 0.15,
+          minPartConfidence: 0.1,
+          nmsRadius: 30.0,
+        },
+        output: {
+          showVideo: true,
+          showSkeleton: true,
+          showPoints: true,
+          showBoundingBox: true,
+        },
+        net: null,
+      };
+      // setup gui
+      function setupGui(cameras, net) {
+        guiState.net = net;
+        console.log('guistate.net', guiState.net);
+        if (cameras.length > 0) {
+          guiState.camera = cameras[0].deviceId;
+        }
+      }
+
+      // posenet estimation - runs in requestAnimationFrame loop
+      function detectPoseInRealTime(video, net) {
+        const canvas = document.querySelector('#output');
+        const ctx = canvas.getContext('2d');
+        const flipPoseHorizontal = true;
+
+        canvas.width = videoWidth;
+        canvas.height = videoHeight;
+        let counter = 0;
+        let currPose = samplePoses[Math.floor(Math.random() * samplePoses.length)];
+        let gameOver = false;
+        // runs in requestAnimationFrame loop
+        async function poseDetectionFrame() {
+          let poses = [];
+          let minPoseConfidence;
+          let minPartConfidence;
+          const pose = await guiState.net.estimateSinglePose(video, {
+            flipHorizontal: flipPoseHorizontal,
+            decodingMethod: 'single-person'
+          });
+          poses = poses.concat(pose);
+          minPoseConfidence = +guiState.singlePoseDetection.minPoseConfidence;
+          minPartConfidence = +guiState.singlePoseDetection.minPartConfidence;
+          ctx.clearRect(0, 0, videoWidth, videoHeight);
+          if (guiState.output.showVideo) {
+            ctx.save();
+            ctx.scale(-1, 1);
+            ctx.translate(-videoWidth, 0);
+            ctx.drawImage(video, 0, 0, videoWidth, videoHeight);
+            ctx.restore();
+          }
+          function drawOverlay(keypoints, minPartConfidence, ctx, scale, background = undefined, thickness = 3) {
+            ctx.save();
+            const boundingBox = posenet.getBoundingBox(keypoints);
+            const bboxMidY = boundingBox.minY + (boundingBox.maxY - boundingBox.minY) / 2;
+            const bboxMidX = boundingBox.minX + (boundingBox.maxX - boundingBox.minX) / 2;
+            // drawPoint(ctx, bboxMidY, bboxMidX, 3, 'red');
+            const videoMidY = videoHeight / 2;
+            const videoMidX = videoWidth / 2;
+            // drawPoint(ctx, videoMidY, videoMidX, 3, 'yellow');
+            const deltaY = videoMidY - bboxMidY;
+            const deltaX = videoMidX - bboxMidX;
+            const deltas = { bboxMidY, bboxMidX, videoMidY, videoMidX, deltaY, deltaX };
+            // scale down
+            ctx.scale(scale, scale);
+            // ctx.translate(videoMidX, videoMidY);
+            // ctx.translate(videoMidX * 3, videoMidY * 3);
+            // console.log(boundingBox);
+            // console.log(`bboxMidY ${bboxMidY} bboxMidX ${bboxMidX} videoMidY ${videoMidY} videoMidX ${videoMidX} deltaY ${deltaY} deltaX ${deltaX}`)
+            if (background) {
+              // let pattern = ctx.createPattern(spikeSprite, 'repeat');
+              // ctx.fillStyle = pattern;
+              ctx.save()
+              ctx.translate(videoMidX / scale, videoMidY / scale);
+              ctx.translate(-videoMidX, -videoMidY);
+              ctx.fillStyle = background;
+              ctx.fillRect(0, 0, videoWidth, videoHeight);
+              ctx.restore();
+            }
+            // move skeleton back to bbox
+            ctx.translate((1 / scale - 1) * bboxMidX, (1 / scale - 1) * bboxMidY);
+            // move skeleton to middle of canvas
+            ctx.translate(deltaX / scale, deltaY / scale);
+            if (guiState.output.showPoints) {
+              drawKeypoints(keypoints, minPartConfidence, ctx, thickness);
+            }
+            if (guiState.output.showSkeleton) {
+              drawSkeleton(keypoints, minPartConfidence, ctx, thickness);
+            }
+            if (guiState.output.showBoundingBox) {
+              drawBoundingBox(keypoints, ctx, 3);
+            }
+            ctx.restore();
+          } // end of drawOverlay
+          // draw static keypoints
+          if (counter > 40) {
+            counter = 0
+            let weightedDist = pns.poseSimilarity(currPose, pose, { strategy: 'cosineSimilarity' });
+            console.log('weightedDist', weightedDist);
+            let simulatingCorrectPose = document.querySelector('#pose-correct').checked;
+            if (weightedDist >= 0.98 || simulatingCorrectPose) {
+              let points = parseInt(document.querySelector('.points').textContent) + 1;
+              for (p of document.querySelectorAll('.points')) {
+                p.textContent = points;
+              }
+            } else {
+              let fails = document.querySelector('#fails').textContent.length;
+              if (fails == 2) {
+                // show game over
+                gameOver = true;
+                document.querySelector('#game-over').style.display = 'block';
+              }
+              document.querySelector('#fails').textContent += 'X';
+            }
+            const currPoseIndex = Math.floor(Math.random() * samplePoses.length);
+            currPose = samplePoses[currPoseIndex];
+          }
+          let scale = counter / 40;
+          // const spikeSprite = document.querySelector('#spike-img');
+          drawOverlay(currPose.keypoints, 0, ctx, scale, 'rgba(255,255,255,0.5)', 20);
+          // drawOverlay(sampleKeypoints, 0, ctx, 1);
+          // draw poses skeletons
+          if (poses[0].score > 0.90) {
+            console.log(poses[0]);
+          }
+          for (const { score, keypoints } of poses) {
+            if (score >= minPoseConfidence) {
+              // console.log(keypoints);
+              if (guiState.output.showPoints) {
+                drawKeypoints(keypoints, minPartConfidence, ctx);
+              }
+              if (guiState.output.showSkeleton) {
+                drawSkeleton(keypoints, minPartConfidence, ctx);
+              }
+              if (guiState.output.showBoundingBox) {
+                drawBoundingBox(keypoints, ctx);
+              }
+            }
+          }
+          if (!document.querySelector('#pause').checked && !gameOver) {
+            requestAnimationFrame(poseDetectionFrame);
+          }
+          counter++;
+        } // end of poseDetectionFrame
+        poseDetectionFrame();
+      } // end of detectPoseInRealTime
+
+      // init posenet model and first call to detectPoseInRealTime
+      async function bindPage() {
+        const net = await posenet.load({
+          architecture: guiState.input.architecture,
+          outputStride: guiState.input.outputStride,
+          multiplier: guiState.input.multiplier,
+          quantBytes: guiState.input.quantBytes
+        });
+        console.log(net)
+        let video;
+        try {
+          video = await loadVideo();
+        } catch (e) {
+          console.error(e);
+          console.error('browser does not support video');
+        }
+        setupGui([], net);
+        detectPoseInRealTime(video, net);
+      }
+      navigator.getUserMedia = navigator.getUserMedia || navigator.webkitGetUserMedia || navigator.mozGetUserMedia;
+      bindPage();
+    })();
+  </script>
+</body>
+
+</html>

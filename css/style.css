@@ -1,0 +1,397 @@
+@import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;600;800;900&family=Rajdhani:wght@500;700&display=swap');
+
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+    user-select: none;
+    -webkit-user-select: none;
+}
+
+body, html {
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    background-color: #060914;
+    font-family: 'Rajdhani', sans-serif;
+    color: #e0f2fe;
+}
+
+#canvas-container {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 1;
+}
+
+/* Red damage flash */
+#damage-flash {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: radial-gradient(circle, transparent 40%, rgba(255, 0, 85, 0.7) 100%);
+    pointer-events: none;
+    z-index: 10;
+    opacity: 0;
+    transition: opacity 0.15s ease-out;
+}
+
+/* UI Overlay Layer */
+.ui-layer {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    z-index: 20;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    padding: 24px 32px;
+}
+
+.interactive {
+    pointer-events: auto;
+}
+
+/* Hub Header */
+.hub-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: rgba(10, 16, 32, 0.65);
+    backdrop-filter: blur(12px);
+    border: 1px solid rgba(0, 243, 255, 0.25);
+    border-radius: 14px;
+    padding: 12px 24px;
+    box-shadow: 0 0 25px rgba(0, 243, 255, 0.15);
+}
+
+.logo-area {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+}
+
+.vr-icon-badge {
+    width: 44px;
+    height: 44px;
+    background: linear-gradient(135deg, #00f3ff, #ff0055);
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 22px;
+    box-shadow: 0 0 15px rgba(0, 243, 255, 0.4);
+}
+
+.logo-title {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 24px;
+    font-weight: 800;
+    letter-spacing: 2px;
+    background: linear-gradient(90deg, #ffffff, #00f3ff);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+}
+
+.logo-subtitle {
+    font-size: 13px;
+    letter-spacing: 1.5px;
+    color: #64748b;
+    text-transform: uppercase;
+}
+
+.hub-controls {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+}
+
+.cyber-btn {
+    background: rgba(15, 23, 42, 0.8);
+    border: 1px solid #00f3ff;
+    color: #00f3ff;
+    padding: 8px 18px;
+    border-radius: 8px;
+    font-family: 'Orbitron', sans-serif;
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 1px;
+    cursor: pointer;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: 0 0 10px rgba(0, 243, 255, 0.2);
+}
+
+.cyber-btn:hover {
+    background: #00f3ff;
+    color: #060914;
+    box-shadow: 0 0 20px rgba(0, 243, 255, 0.6);
+    transform: translateY(-2px);
+}
+
+.cyber-btn.danger {
+    border-color: #ff0055;
+    color: #ff0055;
+    box-shadow: 0 0 10px rgba(255, 0, 85, 0.2);
+}
+
+.cyber-btn.danger:hover {
+    background: #ff0055;
+    color: #ffffff;
+    box-shadow: 0 0 20px rgba(255, 0, 85, 0.6);
+}
+
+/* Hub Guidance Banner */
+.hub-guide-banner {
+    align-self: center;
+    background: rgba(10, 16, 32, 0.7);
+    border: 1px solid rgba(0, 243, 255, 0.3);
+    border-radius: 30px;
+    padding: 10px 28px;
+    backdrop-filter: blur(8px);
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    font-size: 15px;
+    letter-spacing: 1px;
+    color: #94a3b8;
+    box-shadow: 0 0 15px rgba(0, 243, 255, 0.1);
+}
+
+.pulse-dot {
+    width: 10px;
+    height: 10px;
+    background-color: #39ff14;
+    border-radius: 50%;
+    box-shadow: 0 0 10px #39ff14;
+    animation: pulse 1.5s infinite;
+}
+
+@keyframes pulse {
+    0% { transform: scale(0.95); opacity: 0.7; }
+    50% { transform: scale(1.3); opacity: 1; }
+    100% { transform: scale(0.95); opacity: 0.7; }
+}
+
+/* Tracking Mirror HUD (Bottom Right) */
+.tracking-hud {
+    position: absolute;
+    bottom: 24px;
+    right: 32px;
+    width: 240px;
+    height: 180px;
+    background: rgba(8, 12, 24, 0.85);
+    border: 1px solid #00f3ff;
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow: 0 0 20px rgba(0, 243, 255, 0.25);
+    display: flex;
+    flex-direction: column;
+}
+
+.tracking-hud-header {
+    background: rgba(0, 243, 255, 0.15);
+    padding: 4px 10px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 11px;
+    font-family: 'Orbitron', sans-serif;
+    color: #00f3ff;
+    letter-spacing: 1px;
+}
+
+.tracking-canvas {
+    width: 100%;
+    height: 100%;
+    display: block;
+}
+
+/* Game HUD */
+#game-hud {
+    display: none;
+    flex-direction: column;
+    justify-content: space-between;
+    height: 100%;
+}
+
+.game-hud-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.game-info-card {
+    background: rgba(10, 16, 32, 0.7);
+    border: 1px solid rgba(0, 243, 255, 0.3);
+    border-radius: 12px;
+    padding: 10px 24px;
+    backdrop-filter: blur(10px);
+    display: flex;
+    align-items: center;
+    gap: 20px;
+}
+
+.hud-title {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 20px;
+    font-weight: 800;
+    color: #00f3ff;
+}
+
+.hud-score-label {
+    font-size: 12px;
+    color: #64748b;
+    text-transform: uppercase;
+}
+
+.hud-score-value {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 26px;
+    font-weight: 800;
+    color: #ffffff;
+}
+
+.hud-combo-badge {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 18px;
+    font-weight: 700;
+    color: #ffe600;
+    text-shadow: 0 0 10px #ffe600;
+}
+
+/* Health Bar */
+.hp-container {
+    width: 220px;
+    height: 12px;
+    background: rgba(15, 23, 42, 0.8);
+    border: 1px solid rgba(0, 243, 255, 0.4);
+    border-radius: 6px;
+    overflow: hidden;
+    position: relative;
+}
+
+.hp-bar {
+    width: 100%;
+    height: 100%;
+    background: #00f3ff;
+    box-shadow: 0 0 12px #00f3ff;
+    transition: width 0.2s ease-out, background-color 0.2s;
+}
+
+/* Modal Window (Settings / Calibration) */
+.cyber-modal {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: rgba(10, 16, 30, 0.95);
+    border: 2px solid #00f3ff;
+    border-radius: 16px;
+    padding: 30px;
+    width: 480px;
+    max-width: 90%;
+    box-shadow: 0 0 40px rgba(0, 243, 255, 0.35);
+    backdrop-filter: blur(16px);
+    z-index: 50;
+    display: none;
+    flex-direction: column;
+    gap: 20px;
+}
+
+.modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1px solid rgba(0, 243, 255, 0.2);
+    padding-bottom: 12px;
+}
+
+.modal-title {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 20px;
+    color: #00f3ff;
+}
+
+.setting-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 16px;
+}
+
+.setting-slider {
+    width: 160px;
+    accent-color: #00f3ff;
+}
+
+/* Splash Permission Prompt */
+#splash-screen {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: radial-gradient(circle at center, #0e1a38 0%, #060914 100%);
+    z-index: 100;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    gap: 24px;
+    text-align: center;
+    padding: 20px;
+}
+
+.splash-icon {
+    font-size: 64px;
+    filter: drop-shadow(0 0 20px #00f3ff);
+    animation: float 2.5s ease-in-out infinite;
+}
+
+@keyframes float {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-10px); }
+}
+
+.splash-title {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 42px;
+    font-weight: 900;
+    letter-spacing: 3px;
+    background: linear-gradient(135deg, #ffffff, #00f3ff, #ff0055);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+}
+
+.splash-subtitle {
+    font-size: 18px;
+    color: #94a3b8;
+    max-width: 580px;
+    line-height: 1.6;
+}
+
+.start-btn {
+    background: linear-gradient(135deg, #00f3ff, #0077ff);
+    border: none;
+    color: #ffffff;
+    font-family: 'Orbitron', sans-serif;
+    font-size: 18px;
+    font-weight: 700;
+    padding: 16px 48px;
+    border-radius: 12px;
+    cursor: pointer;
+    box-shadow: 0 0 30px rgba(0, 243, 255, 0.5);
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.start-btn:hover {
+    transform: scale(1.05);
+    box-shadow: 0 0 45px rgba(0, 243, 255, 0.8);
+}
