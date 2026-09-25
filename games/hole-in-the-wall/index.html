@@ -186,16 +186,27 @@
         video.srcObject = stream;
 
         return new Promise((resolve) => {
-          video.onloadedmetadata = () => {
-            resolve(video);
+          let resolved = false;
+          const done = () => {
+            if (!resolved) {
+              resolved = true;
+              video.play().catch(e => console.warn('Hole video play:', e));
+              resolve(video);
+            }
           };
+          if (video.readyState >= 1) {
+            done();
+          } else {
+            video.onloadedmetadata = done;
+            video.oncanplay = done;
+            setTimeout(done, 1500);
+          }
         });
       }
 
       // plays video after setup camera
       async function loadVideo() {
         const video = await setupCamera();
-        video.play();
         return video;
       }
 
@@ -318,10 +329,18 @@
           } // end of drawOverlay
           // draw static keypoints
           if (counter > 40) {
-            counter = 0
-            let weightedDist = pns.poseSimilarity(currPose, pose, { strategy: 'cosineSimilarity' });
+            counter = 0;
+            let weightedDist = 0;
+            if (currPose && pose) {
+              try {
+                weightedDist = pns.poseSimilarity(currPose, pose, { strategy: 'cosineSimilarity' });
+              } catch (e) {
+                console.warn('Pose similarity calc error:', e);
+              }
+            }
             console.log('weightedDist', weightedDist);
-            let simulatingCorrectPose = document.querySelector('#pose-correct').checked;
+            const poseCorrectElem = document.querySelector('#pose-correct');
+            let simulatingCorrectPose = poseCorrectElem ? poseCorrectElem.checked : false;
             if (weightedDist >= 0.98 || simulatingCorrectPose) {
               let points = parseInt(document.querySelector('.points').textContent) + 1;
               for (p of document.querySelectorAll('.points')) {
@@ -344,7 +363,7 @@
           drawOverlay(currPose.keypoints, 0, ctx, scale, 'rgba(255,255,255,0.5)', 20);
           // drawOverlay(sampleKeypoints, 0, ctx, 1);
           // draw poses skeletons
-          if (poses[0].score > 0.90) {
+          if (poses && poses.length > 0 && poses[0] && poses[0].score > 0.90) {
             console.log(poses[0]);
           }
           for (const { score, keypoints } of poses) {
@@ -382,8 +401,14 @@
         try {
           video = await loadVideo();
         } catch (e) {
-          console.error(e);
-          console.error('browser does not support video');
+          console.warn('Webcam not accessible, enabling simulation fallback mode:', e);
+          const poseCorrectElem = document.querySelector('#pose-correct');
+          if (poseCorrectElem) poseCorrectElem.checked = true;
+          // Create dummy canvas as video replacement so posenet doesn't throw
+          const dummyCanvas = document.createElement('canvas');
+          dummyCanvas.width = videoWidth;
+          dummyCanvas.height = videoHeight;
+          video = dummyCanvas;
         }
         setupGui([], net);
         detectPoseInRealTime(video, net);

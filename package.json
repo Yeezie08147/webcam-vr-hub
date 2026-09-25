@@ -6,7 +6,8 @@
   "description": "Webcam VR Hub - 7 Motion-Tracked 3D Games + Hole In The Wall (Lovable Compatible, 100% Free & Zero-Cost)",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "build": "node build.js",
+    "build:vite": "vite build",
     "preview": "vite preview",
     "start": "python server.py"
   },

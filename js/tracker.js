@@ -158,20 +158,31 @@ class VisionTracker {
             });
             this.videoElement.srcObject = stream;
             await new Promise(resolve => {
-                this.videoElement.onloadedmetadata = () => {
-                    this.videoElement.play();
-                    resolve();
+                let resolved = false;
+                const done = () => {
+                    if (!resolved) {
+                        resolved = true;
+                        this.videoElement.play().catch(e => console.warn('Video play warning:', e));
+                        resolve();
+                    }
                 };
+                if (this.videoElement.readyState >= 1) {
+                    done();
+                } else {
+                    this.videoElement.onloadedmetadata = done;
+                    this.videoElement.oncanplay = done;
+                    setTimeout(done, 1500); // 1.5s safety timeout
+                }
             });
         } catch (err) {
             console.error('Webcam access error:', err);
             throw err;
         }
 
-        // Initialize MediaPipe Hands (Optimized modelComplexity: 0 for 60+ FPS zero-lag)
+        // Initialize MediaPipe Hands (Pinned exact version matching bundled JS)
         if (typeof Hands !== 'undefined') {
             this.handsDetector = new Hands({
-                locateFile: (file) => 'https://cdn.jsdelivr.net/npm/@mediapipe/hands/' + file
+                locateFile: (file) => 'https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1675469240/' + file
             });
             this.handsDetector.setOptions({
                 maxNumHands: 2,
@@ -182,11 +193,11 @@ class VisionTracker {
             this.handsDetector.onResults((results) => this.onHandsResults(results));
         }
 
-        // Initialize MediaPipe FaceMesh (for head dodging and posture estimation)
+        // Initialize MediaPipe FaceMesh (Pinned exact version matching bundled JS)
         if (typeof FaceMesh !== 'undefined') {
             try {
                 this.faceDetector = new FaceMesh({
-                    locateFile: (file) => 'https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/' + file
+                    locateFile: (file) => 'https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh@0.4.1633559619/' + file
                 });
                 this.faceDetector.setOptions({
                     maxNumFaces: 1,
@@ -202,6 +213,293 @@ class VisionTracker {
 
         this.startProcessing();
         this.isRunning = true;
+    }
+
+    pauseCamera() {
+        if (this.videoElement && this.videoElement.srcObject) {
+            try {
+                const tracks = this.videoElement.srcObject.getTracks();
+                tracks.forEach(track => track.stop());
+            } catch (e) {
+                console.warn('Error stopping camera tracks:', e);
+            }
+            this.videoElement.srcObject = null;
+        }
+        this.isCameraPaused = true;
+    }
+
+    async resumeCamera() {
+        if (!this.isCameraPaused || this.isMouseMode) return;
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({
+                video: {
+                    width: { ideal: 640 },
+                    height: { ideal: 480 },
+                    facingMode: 'user'
+                },
+                audio: false
+            });
+            this.videoElement.srcObject = stream;
+            await new Promise(resolve => {
+                let resolved = false;
+                const done = () => {
+                    if (!resolved) {
+                        resolved = true;
+                        this.videoElement.play().catch(e => console.warn(e));
+                        resolve();
+                    }
+                };
+                if (this.videoElement.readyState >= 1) {
+                    done();
+                } else {
+                    this.videoElement.onloadedmetadata = done;
+                    this.videoElement.oncanplay = done;
+                    setTimeout(done, 1500);
+                }
+            });
+            this.isCameraPaused = false;
+        } catch (e) {
+            console.warn('Could not re-acquire camera, enabling mouse fallback:', e);
+            this.initMouseMode(this.mirrorCanvas);
+        }
+    }
+
+    initMouseMode(mirrorCanvas) {
+        if (this.isRunning) {
+            this.pauseCamera();
+        }
+        this.isMouseMode = true;
+        this.mirrorCanvas = mirrorCanvas;
+        if (mirrorCanvas) {
+            this.mirrorCtx = mirrorCanvas.getContext('2d');
+        }
+
+        this.mouseState = {
+            x: 0,
+            y: 0,
+            z: -0.5,
+            isDown: false,
+            activeHand: 'Right', // 'Right', 'Left', or 'Both'
+            headX: 0,
+            headY: 0,
+            isDucking: false
+        };
+
+        const onMouseMove = (e) => {
+            this.mouseState.x = (e.clientX / window.innerWidth) * 2 - 1;
+            this.mouseState.y = -(e.clientY / window.innerHeight) * 2 + 1;
+        };
+
+        const onMouseDown = (e) => {
+            if (e.button === 0) {
+                this.mouseState.isDown = true;
+            } else if (e.button === 2) {
+                e.preventDefault();
+                this.mouseState.activeHand = this.mouseState.activeHand === 'Right' ? 'Left' : (this.mouseState.activeHand === 'Left' ? 'Both' : 'Right');
+            }
+        };
+
+        const onMouseUp = (e) => {
+            if (e.button === 0) {
+                this.mouseState.isDown = false;
+            }
+        };
+
+        const onWheel = (e) => {
+            this.mouseState.z = Math.max(-1.5, Math.min(0.2, this.mouseState.z - Math.sign(e.deltaY) * 0.1));
+        };
+
+        const onKeyDown = (e) => {
+            if (e.code === 'Space') {
+                this.mouseState.isDown = true;
+            } else if (e.code === 'KeyQ') {
+                this.mouseState.activeHand = 'Left';
+            } else if (e.code === 'KeyE') {
+                this.mouseState.activeHand = 'Right';
+            } else if (e.code === 'KeyB') {
+                this.mouseState.activeHand = 'Both';
+            } else if (e.code === 'KeyS' || e.code === 'ArrowDown') {
+                this.mouseState.isDucking = true;
+                this.mouseState.headY = -0.35;
+            } else if (e.code === 'KeyA' || e.code === 'ArrowLeft') {
+                this.mouseState.headX = -0.45;
+            } else if (e.code === 'KeyD' || e.code === 'ArrowRight') {
+                this.mouseState.headX = 0.45;
+            }
+        };
+
+        const onKeyUp = (e) => {
+            if (e.code === 'Space') {
+                this.mouseState.isDown = false;
+            } else if (e.code === 'KeyS' || e.code === 'ArrowDown') {
+                this.mouseState.isDucking = false;
+                this.mouseState.headY = 0;
+            } else if (e.code === 'KeyA' || e.code === 'ArrowLeft' || e.code === 'KeyD' || e.code === 'ArrowRight') {
+                this.mouseState.headX = 0;
+            }
+        };
+
+        window.addEventListener('mousemove', onMouseMove);
+        window.addEventListener('mousedown', onMouseDown);
+        window.addEventListener('mouseup', onMouseUp);
+        window.addEventListener('wheel', onWheel, { passive: true });
+        window.addEventListener('keydown', onKeyDown);
+        window.addEventListener('keyup', onKeyUp);
+        window.addEventListener('contextmenu', (e) => {
+            if (this.isMouseMode) e.preventDefault();
+        });
+
+        this.isRunning = true;
+        this.startMouseLoop();
+    }
+
+    startMouseLoop() {
+        const mouseLoop = () => {
+            if (!this.isRunning || !this.isMouseMode) return;
+
+            const now = performance.now();
+            const dt = (now - (this.lastMouseTime || now)) / 1000;
+            this.lastMouseTime = now;
+
+            const targetX = this.mouseState.x;
+            const targetY = this.mouseState.y;
+            const targetZ = this.mouseState.z;
+
+            this.currentMousePos = this.currentMousePos || { x: 0, y: 0, z: -0.5 };
+            const alpha = 0.55;
+            this.currentMousePos.x += (targetX - this.currentMousePos.x) * alpha;
+            this.currentMousePos.y += (targetY - this.currentMousePos.y) * alpha;
+            this.currentMousePos.z += (targetZ - this.currentMousePos.z) * alpha;
+
+            const mx = this.currentMousePos.x;
+            const my = this.currentMousePos.y;
+            const mz = this.currentMousePos.z;
+
+            const velX = (mx - (this.prevMouseX || mx)) / (dt || 0.016);
+            const velY = (my - (this.prevMouseY || my)) / (dt || 0.016);
+            this.prevMouseX = mx;
+            this.prevMouseY = my;
+            const speed = Math.sqrt(velX * velX + velY * velY);
+
+            const isDown = this.mouseState.isDown;
+            const mode = this.mouseState.activeHand;
+
+            const activeHands = [];
+
+            const createSimHand = (side, x, y, z, isPinch) => {
+                const landmarks = this.buildSyntheticLandmarks(side, x, y, z, isPinch);
+                const pointerDir = { x: x * 0.15, y: y * 0.15 + 0.2, z: -0.9 };
+                const forward = { x: x * 0.2, y: 0.9, z: -0.4 };
+                const normal = { x: 0, y: 0.4, z: 0.9 };
+                const sideVec = { x: 1, y: 0, z: 0 };
+
+                return {
+                    label: side,
+                    screenX: x,
+                    screenY: y,
+                    screenZ: z,
+                    palm: { x: (x + 1) / 2, y: (-y + 1) / 2, z },
+                    wrist: { x: (x + 1) / 2, y: (-y + 1) / 2 + 0.1, z },
+                    knuckleCenter: { x: (x + 1) / 2, y: (-y + 1) / 2 - 0.05, z },
+                    pointer: {
+                        screenX: x,
+                        screenY: y,
+                        screenZ: z,
+                        dir: pointerDir
+                    },
+                    curls: {
+                        thumb: isPinch ? 0.7 : 0.1,
+                        index: isPinch ? 0.8 : 0.05,
+                        middle: isPinch ? 0.85 : 0.85,
+                        ring: 0.9,
+                        pinky: 0.9
+                    },
+                    isPinching: isPinch,
+                    isOpenPalm: !isPinch && speed < 1.0,
+                    isFist: isPinch || speed > 3.0,
+                    isPointing: !isPinch,
+                    velocity: { x: velX, y: velY, z: 0, speed },
+                    orientation: {
+                        forward,
+                        normal,
+                        side: sideVec,
+                        matrix: [1, 0, 0, 0,  0, 1, 0, 0,  0, 0, 1, 0,  0, 0, 0, 1],
+                        pitch: 0,
+                        yaw: x * 0.4,
+                        roll: 0
+                    },
+                    landmarks
+                };
+            };
+
+            if (mode === 'Right' || mode === 'Both') {
+                const rx = mode === 'Both' ? Math.max(0.1, mx + 0.3) : mx;
+                activeHands.push(createSimHand('Right', rx, my, mz, isDown));
+            }
+            if (mode === 'Left' || mode === 'Both') {
+                const lx = mode === 'Both' ? Math.min(-0.1, mx - 0.3) : mx;
+                activeHands.push(createSimHand('Left', lx, my, mz, isDown));
+            }
+
+            this.hands = activeHands;
+            this.head = {
+                x: this.mouseState.headX,
+                y: this.mouseState.headY,
+                z: 0,
+                isDucking: this.mouseState.isDucking,
+                isLeaningLeft: this.mouseState.headX < -0.2,
+                isLeaningRight: this.mouseState.headX > 0.2
+            };
+
+            this.classifyBodyPose();
+            this.calculateFps();
+            this.drawMirrorHud();
+
+            for (const cb of this.onFrameCallbacks) {
+                cb(this.getTrackingData());
+            }
+
+            requestAnimationFrame(mouseLoop);
+        };
+        requestAnimationFrame(mouseLoop);
+    }
+
+    buildSyntheticLandmarks(side, normX, normY, normZ, isPinch) {
+        const mirrorX = (normX + 1) / 2;
+        const rawX = 1.0 - mirrorX;
+        const rawY = (-normY + 1) / 2;
+        const zBase = normZ * 0.2;
+        const sign = side === 'Right' ? 1 : -1;
+
+        const offsets = [
+            [0, 0.08, 0],
+            [sign * 0.03, 0.05, -0.01],
+            [sign * 0.05, 0.03, -0.02],
+            [sign * 0.06, 0.01, -0.03],
+            isPinch ? [sign * 0.02, -0.03, -0.03] : [sign * 0.07, -0.01, -0.04],
+            [sign * 0.03, -0.01, -0.01],
+            [sign * 0.03, -0.04, -0.02],
+            [sign * 0.025, -0.06, -0.03],
+            isPinch ? [sign * 0.02, -0.04, -0.03] : [sign * 0.02, -0.08, -0.04],
+            [0, -0.01, -0.01],
+            [0, -0.04, -0.02],
+            [0, -0.06, -0.03],
+            isPinch ? [0, -0.03, -0.01] : [0, -0.085, -0.04],
+            [-sign * 0.03, -0.01, -0.01],
+            [-sign * 0.03, -0.035, -0.02],
+            [-sign * 0.03, -0.055, -0.025],
+            [-sign * 0.03, -0.075, -0.03],
+            [-sign * 0.055, 0.01, 0],
+            [-sign * 0.055, -0.02, -0.01],
+            [-sign * 0.055, -0.04, -0.015],
+            [-sign * 0.055, -0.06, -0.02]
+        ];
+
+        return offsets.map(([dx, dy, dz]) => ({
+            x: Math.max(0, Math.min(1, rawX + dx)),
+            y: Math.max(0, Math.min(1, rawY + dy)),
+            z: zBase + dz
+        }));
     }
 
     startProcessing() {
@@ -652,13 +950,34 @@ class VisionTracker {
         ctx.save();
         ctx.clearRect(0, 0, w, h);
 
-        // Draw webcam feed semi-transparent with cyber overlay
-        ctx.save();
-        ctx.scale(-1, 1);
-        ctx.translate(-w, 0);
-        ctx.globalAlpha = 0.5;
-        ctx.drawImage(this.videoElement, 0, 0, w, h);
-        ctx.restore();
+        if (!this.isMouseMode && this.videoElement && this.videoElement.readyState >= 2) {
+            ctx.save();
+            ctx.scale(-1, 1);
+            ctx.translate(-w, 0);
+            ctx.globalAlpha = 0.5;
+            ctx.drawImage(this.videoElement, 0, 0, w, h);
+            ctx.restore();
+        } else if (this.isMouseMode) {
+            // Draw grid in mirror HUD
+            ctx.fillStyle = '#0a101f';
+            ctx.fillRect(0, 0, w, h);
+            ctx.strokeStyle = 'rgba(0, 243, 255, 0.15)';
+            ctx.lineWidth = 1;
+            for (let x = 0; x < w; x += 25) {
+                ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke();
+            }
+            for (let y = 0; y < h; y += 25) {
+                ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke();
+            }
+            ctx.fillStyle = '#00f3ff';
+            ctx.font = 'bold 9px monospace';
+            ctx.fillText('MOUSE EMULATION', 6, 14);
+            ctx.fillStyle = '#94a3b8';
+            ctx.font = '8px monospace';
+            ctx.fillText('CLICK: PINCH/GRAB', 6, 26);
+            ctx.fillText('Q/E/R-CLICK: HAND', 6, 36);
+            ctx.fillText('WASD: DODGE/DUCK', 6, 46);
+        }
 
         ctx.fillStyle = 'rgba(6, 12, 24, 0.45)';
         ctx.fillRect(0, 0, w, h);

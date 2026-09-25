@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Webcam VR Game Hub</title>
+    <link rel="icon" type="image/x-icon" href="favicon.ico">
     <link rel="stylesheet" href="css/style.css">
     
     <!-- Three.js (Local with CDN Fallback) -->
@@ -53,8 +54,11 @@
             Play high-energy motion VR games using <strong>only your webcam</strong>.<br>
             No VR headset needed! Stand or sit in view of your camera. Your hands and head become the controllers.
         </p>
-        <button id="start-hub-btn" class="start-btn interactive">🚀 ENTER VR HUB</button>
-        <p id="splash-status" style="font-size: 13px; color: #64748b;">Requires webcam access for motion tracking.</p>
+        <div style="display: flex; gap: 14px; justify-content: center; align-items: center; flex-wrap: wrap; margin-bottom: 12px;">
+            <button id="start-hub-btn" class="start-btn interactive">🚀 ENTER VR HUB (WEBCAM)</button>
+            <button id="start-mouse-btn" class="start-btn interactive" style="background: linear-gradient(135deg, #2563eb, #06b6d4); box-shadow: 0 0 20px rgba(6,182,212,0.4);">🎮 PLAY WITH MOUSE (NO CAM)</button>
+        </div>
+        <p id="splash-status" style="font-size: 13px; color: #64748b;">Requires webcam access for motion tracking, or select Mouse Mode.</p>
     </div>
 
     <!-- Hub UI Overlay -->
@@ -174,7 +178,7 @@
 
     <!-- Bootstrap Script -->
     <script>
-        document.addEventListener('DOMContentLoaded', () => {
+        function initHubApp() {
             const container = document.getElementById('canvas-container');
             const videoElem = document.getElementById('webcam-video');
             const mirrorCanvas = document.getElementById('mirror-canvas');
@@ -196,7 +200,21 @@
             // Initialize 3D VR Hub
             window.vrHub.init(container);
 
-            // Start button click
+            const startMouseBtn = document.getElementById('start-mouse-btn');
+
+            const enterWithMouse = () => {
+                window.soundFx.init();
+                window.visionTracker.initMouseMode(mirrorCanvas);
+                splashScreen.style.display = 'none';
+                hubOverlay.style.display = 'flex';
+                window.soundFx.playUiClick();
+            };
+
+            if (startMouseBtn) {
+                startMouseBtn.addEventListener('click', enterWithMouse);
+            }
+
+            // Start button click (Webcam mode)
             startBtn.addEventListener('click', async () => {
                 splashStatus.textContent = 'Connecting to webcam & initializing AI vision models...';
                 startBtn.disabled = true;
@@ -217,9 +235,15 @@
                     window.soundFx.playUiClick();
                 } catch (err) {
                     console.error('Initialization failed:', err);
-                    splashStatus.textContent = 'Error: Could not access webcam. Please ensure your camera is connected and permissions are allowed.';
+                    splashStatus.innerHTML = `
+                        <div style="color: #ff4d6d; margin-bottom: 8px;">⚠️ Could not access webcam: ${err.name || 'Error'} (${err.message || 'Permission denied or in use by another app'})</div>
+                        <button id="switch-to-mouse-btn" class="cyber-btn" style="background: linear-gradient(135deg, #00f3ff, #0077ff); color: #000; font-weight: bold; padding: 10px 22px; font-size: 13px; margin-top: 4px; cursor: pointer;">🎮 SWITCH TO MOUSE CONTROLS</button>
+                    `;
+                    const switchBtn = document.getElementById('switch-to-mouse-btn');
+                    if (switchBtn) switchBtn.addEventListener('click', enterWithMouse);
+
                     startBtn.disabled = false;
-                    startBtn.textContent = 'RETRY WEBCAM';
+                    startBtn.textContent = '🔄 RETRY WEBCAM';
                 }
             });
 
@@ -290,7 +314,13 @@
                 trackingMirrorContainer.style.height = mirrorMinimized ? '32px' : '180px';
                 mirrorToggleBtn.textContent = mirrorMinimized ? '➕' : '➖';
             });
-        });
+        }
+
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', initHubApp);
+        } else {
+            initHubApp();
+        }
     </script>
 </body>
 </html>

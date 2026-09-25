@@ -493,6 +493,11 @@ class VRHub {
 
         if (gameId === 'hole') {
             this.currentGameId = 'hole';
+            // Pause parent camera so iframe has exclusive access to the webcam hardware
+            if (window.visionTracker && window.visionTracker.pauseCamera) {
+                window.visionTracker.pauseCamera();
+            }
+
             // Hide Holo-deck & Hub hands
             this.hubGroup.visible = false;
             ['Left', 'Right'].forEach(side => {
@@ -544,6 +549,11 @@ class VRHub {
         if (holeContainer && holeIframe) {
             holeContainer.style.display = 'none';
             holeIframe.src = '';
+        }
+
+        // Resume parent camera if returning from hole game
+        if (window.visionTracker && window.visionTracker.resumeCamera) {
+            window.visionTracker.resumeCamera();
         }
 
         if (this.currentGame) {
