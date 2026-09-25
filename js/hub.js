@@ -262,101 +262,202 @@ class VRHub {
 
     buildSpatialCursor() {
         this.handAvatars = {
-            Left: this.createCyberHand(0xff0055),
-            Right: this.createCyberHand(0x00f3ff)
+            Left: this.createCyberHand(0xff0055, 'Left'),
+            Right: this.createCyberHand(0x00f3ff, 'Right')
         };
         this.hubGroup.add(this.handAvatars.Left.group);
         this.hubGroup.add(this.handAvatars.Right.group);
+        this.hubGroup.add(this.handAvatars.Left.laserGroup);
+        this.hubGroup.add(this.handAvatars.Right.laserGroup);
+        this.hubGroup.add(this.handAvatars.Left.reticleGroup);
+        this.hubGroup.add(this.handAvatars.Right.reticleGroup);
     }
 
-    createCyberHand(colorHex) {
+    createCyberHand(colorHex, side) {
         const group = new THREE.Group();
 
-        // Palm chassis
-        const palmGeo = new THREE.BoxGeometry(0.38, 0.44, 0.14);
+        // 1. Sleek Cyber Palm Chassis
+        const palmGeo = new THREE.BoxGeometry(0.36, 0.42, 0.12);
         const palmMat = new THREE.MeshStandardMaterial({
-            color: 0x101a2e,
-            metalness: 0.8,
-            roughness: 0.2,
+            color: 0x0c1424,
+            metalness: 0.85,
+            roughness: 0.25,
             emissive: colorHex,
-            emissiveIntensity: 0.35
+            emissiveIntensity: 0.25
         });
         const palm = new THREE.Mesh(palmGeo, palmMat);
         group.add(palm);
 
-        // Glowing Palm Core Crystal
-        const coreGeo = new THREE.OctahedronGeometry(0.12);
+        // Armor Plate Backing
+        const armorGeo = new THREE.BoxGeometry(0.32, 0.38, 0.04);
+        const armorMat = new THREE.MeshStandardMaterial({ color: 0x18243c, metalness: 0.9, roughness: 0.1 });
+        const armor = new THREE.Mesh(armorGeo, armorMat);
+        armor.position.z = -0.06;
+        group.add(armor);
+
+        // Glowing Plasma Core Crystal (Repulsor)
+        const coreGeo = new THREE.OctahedronGeometry(0.11);
         const coreMat = new THREE.MeshBasicMaterial({ color: colorHex });
         const core = new THREE.Mesh(coreGeo, coreMat);
-        core.position.z = 0.09;
+        core.position.z = 0.07;
         group.add(core);
 
-        // Wrist cuff
-        const cuffGeo = new THREE.CylinderGeometry(0.18, 0.22, 0.24, 12);
-        const cuffMat = new THREE.MeshStandardMaterial({ color: 0x080e1a, metalness: 0.9, roughness: 0.3 });
+        // Core Halo Ring
+        const coreHaloGeo = new THREE.RingGeometry(0.12, 0.16, 16);
+        const coreHaloMat = new THREE.MeshBasicMaterial({ color: 0xffffff, side: THREE.DoubleSide });
+        const coreHalo = new THREE.Mesh(coreHaloGeo, coreHaloMat);
+        coreHalo.position.z = 0.075;
+        group.add(coreHalo);
+
+        // Metallic Wrist Cuff
+        const cuffGeo = new THREE.CylinderGeometry(0.18, 0.22, 0.22, 14);
+        const cuffMat = new THREE.MeshStandardMaterial({ color: 0x070b14, metalness: 0.95, roughness: 0.2 });
         const cuff = new THREE.Mesh(cuffGeo, cuffMat);
-        cuff.position.y = -0.34;
+        cuff.position.y = -0.32;
         group.add(cuff);
 
-        // 5 Articulated Finger Rays
-        const fingerRays = [];
-        const fingerOffsets = [
-            { x: -0.22, y: -0.05, len: 0.28 }, // thumb
-            { x: -0.12, y: 0.22, len: 0.38 },  // index
-            { x: -0.01, y: 0.24, len: 0.42 },  // middle
-            { x: 0.10, y: 0.22, len: 0.38 },   // ring
-            { x: 0.20, y: 0.16, len: 0.30 }    // pinky
+        // 2. Articulated 5-Finger Kinematics (Proximal + Distal + Tip)
+        const fingers = [];
+        const isRight = side === 'Right';
+        const fingerLayout = [
+            { id: 'thumb', x: (isRight ? -0.22 : 0.22), y: -0.06, proxLen: 0.16, distLen: 0.14, angleZ: (isRight ? 0.6 : -0.6) },
+            { id: 'index', x: (isRight ? -0.11 : 0.11), y: 0.21, proxLen: 0.20, distLen: 0.18, angleZ: 0 },
+            { id: 'middle', x: 0.0, y: 0.23, proxLen: 0.22, distLen: 0.20, angleZ: 0 },
+            { id: 'ring', x: (isRight ? 0.11 : -0.11), y: 0.21, proxLen: 0.20, distLen: 0.18, angleZ: 0 },
+            { id: 'pinky', x: (isRight ? 0.21 : -0.21), y: 0.16, proxLen: 0.16, distLen: 0.14, angleZ: (isRight ? -0.2 : 0.2) }
         ];
 
-        fingerOffsets.forEach((fo) => {
-            const fGroup = new THREE.Group();
-            fGroup.position.set(fo.x, fo.y, 0);
+        let indexTipMesh = null;
 
-            const segGeo = new THREE.CylinderGeometry(0.035, 0.035, fo.len, 8);
-            const segMat = new THREE.MeshBasicMaterial({ color: colorHex });
-            const seg = new THREE.Mesh(segGeo, segMat);
-            seg.position.y = fo.len / 2;
-            fGroup.add(seg);
+        fingerLayout.forEach((fl) => {
+            const root = new THREE.Group();
+            root.position.set(fl.x, fl.y, 0);
+            root.rotation.z = fl.angleZ;
 
-            const tipGeo = new THREE.SphereGeometry(0.045, 8, 8);
-            const tipMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
-            const tip = new THREE.Mesh(tipGeo, tipMat);
-            tip.position.y = fo.len;
-            fGroup.add(tip);
+            // Proximal bone
+            const proxGeo = new THREE.CylinderGeometry(0.032, 0.036, fl.proxLen, 8);
+            const boneMat = new THREE.MeshStandardMaterial({ color: 0x141f36, metalness: 0.8, roughness: 0.3 });
+            const proxMesh = new THREE.Mesh(proxGeo, boneMat);
+            proxMesh.position.y = fl.proxLen / 2;
+            root.add(proxMesh);
 
-            group.add(fGroup);
-            fingerRays.push(fGroup);
+            // Knuckle Joint
+            const jointGeo = new THREE.SphereGeometry(0.04, 8, 8);
+            const jointMat = new THREE.MeshBasicMaterial({ color: colorHex });
+            const joint = new THREE.Mesh(jointGeo, jointMat);
+            joint.position.y = fl.proxLen;
+            root.add(joint);
+
+            // Distal group (hinges at knuckle joint)
+            const distGroup = new THREE.Group();
+            distGroup.position.y = fl.proxLen;
+
+            const distGeo = new THREE.CylinderGeometry(0.026, 0.03, fl.distLen, 8);
+            const distMesh = new THREE.Mesh(distGeo, boneMat);
+            distMesh.position.y = fl.distLen / 2;
+            distGroup.add(distMesh);
+
+            // Glowing Fingertip Emitter
+            const tipGeo = new THREE.SphereGeometry(0.038, 8, 8);
+            const tipMat = new THREE.MeshBasicMaterial({ color: fl.id === 'index' ? 0xffffff : colorHex });
+            const tipMesh = new THREE.Mesh(tipGeo, tipMat);
+            tipMesh.position.y = fl.distLen;
+            distGroup.add(tipMesh);
+
+            root.add(distGroup);
+            group.add(root);
+
+            if (fl.id === 'index') {
+                indexTipMesh = tipMesh;
+            }
+
+            fingers.push({
+                id: fl.id,
+                root,
+                distGroup,
+                tipMesh
+            });
         });
 
-        // Glowing Laser Pointer shooting forward from index finger along +Y
-        const laserGeo = new THREE.CylinderGeometry(0.015, 0.015, 16, 8);
-        const laserMat = new THREE.MeshBasicMaterial({
+        // 3. Dynamic Laser Beam (in world/hub coordinates)
+        const laserGroup = new THREE.Group();
+        const laserCoreGeo = new THREE.CylinderGeometry(0.012, 0.012, 1.0, 8);
+        const laserCoreMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+        const laserCore = new THREE.Mesh(laserCoreGeo, laserCoreMat);
+
+        const laserAuraGeo = new THREE.CylinderGeometry(0.038, 0.038, 1.0, 8);
+        const laserAuraMat = new THREE.MeshBasicMaterial({
             color: colorHex,
             transparent: true,
-            opacity: 0.75,
+            opacity: 0.65,
             blending: THREE.AdditiveBlending
         });
-        const laser = new THREE.Mesh(laserGeo, laserMat);
-        laser.position.set(-0.12, 0.22 + 8.0, 0);
-        group.add(laser);
+        const laserAura = new THREE.Mesh(laserAuraGeo, laserAuraMat);
+        laserGroup.add(laserCore, laserAura);
+        laserGroup.visible = false;
 
-        // Reticle target on card
-        const reticleGeo = new THREE.RingGeometry(0.08, 0.16, 16);
-        const reticleMat = new THREE.MeshBasicMaterial({ color: colorHex, side: THREE.DoubleSide });
-        const reticle = new THREE.Mesh(reticleGeo, reticleMat);
-        reticle.visible = false;
-        this.hubGroup.add(reticle);
+        // 4. Holographic Targeting Reticle with Dwell Meter
+        const reticleGroup = new THREE.Group();
+
+        // Inner pinpoint dot
+        const dotGeo = new THREE.CircleGeometry(0.035, 12);
+        const dotMat = new THREE.MeshBasicMaterial({ color: 0xffffff, side: THREE.DoubleSide });
+        const dot = new THREE.Mesh(dotGeo, dotMat);
+        reticleGroup.add(dot);
+
+        // Middle crosshair diamond ring
+        const midGeo = new THREE.RingGeometry(0.07, 0.11, 4);
+        const midMat = new THREE.MeshBasicMaterial({ color: colorHex, side: THREE.DoubleSide, wireframe: true });
+        const midRing = new THREE.Mesh(midGeo, midMat);
+        reticleGroup.add(midRing);
+
+        // Outer holographic ring
+        const outerGeo = new THREE.RingGeometry(0.18, 0.22, 24);
+        const outerMat = new THREE.MeshBasicMaterial({ color: colorHex, side: THREE.DoubleSide, transparent: true, opacity: 0.8 });
+        const outerRing = new THREE.Mesh(outerGeo, outerMat);
+        reticleGroup.add(outerRing);
+
+        // Dwell circular progress arc
+        const dwellGeo = new THREE.RingGeometry(0.24, 0.30, 32, 1, 0, 0.001);
+        const dwellMat = new THREE.MeshBasicMaterial({
+            color: 0x39ff14,
+            side: THREE.DoubleSide,
+            transparent: true,
+            opacity: 0.95
+        });
+        const dwellRing = new THREE.Mesh(dwellGeo, dwellMat);
+        reticleGroup.add(dwellRing);
+        reticleGroup.visible = false;
 
         group.position.set(0, -99, 0);
 
         return {
             group,
             palm,
+            armor,
             core,
-            fingerRays,
-            laser,
-            reticle,
-            colorHex
+            coreHalo,
+            fingers,
+            indexTip: indexTipMesh,
+            laserGroup,
+            laserCore,
+            laserAura,
+            reticleGroup,
+            reticleDot: dot,
+            reticleMid: midRing,
+            reticleOuter: outerRing,
+            dwellRing,
+            colorHex,
+            side,
+            updateDwell: (pct) => {
+                if (pct <= 0.01) {
+                    dwellRing.visible = false;
+                } else {
+                    dwellRing.visible = true;
+                    dwellRing.geometry.dispose();
+                    dwellRing.geometry = new THREE.RingGeometry(0.24, 0.30, 32, 1, -Math.PI / 2, Math.PI * 2 * pct);
+                }
+            }
         };
     }
 
@@ -394,12 +495,13 @@ class VRHub {
             this.currentGameId = 'hole';
             // Hide Holo-deck & Hub hands
             this.hubGroup.visible = false;
-            if (this.handAvatars) {
-                this.handAvatars.Left.group.visible = false;
-                this.handAvatars.Right.group.visible = false;
-                this.handAvatars.Left.reticle.visible = false;
-                this.handAvatars.Right.reticle.visible = false;
-            }
+            ['Left', 'Right'].forEach(side => {
+                if (this.handAvatars && this.handAvatars[side]) {
+                    this.handAvatars[side].group.visible = false;
+                    if (this.handAvatars[side].laserGroup) this.handAvatars[side].laserGroup.visible = false;
+                    if (this.handAvatars[side].reticleGroup) this.handAvatars[side].reticleGroup.visible = false;
+                }
+            });
             document.getElementById('hub-overlay').style.display = 'none';
 
             // Launch GitHub Hole In The Wall in the embedded in-app frame
@@ -419,12 +521,13 @@ class VRHub {
 
         // Hide Holo-deck & Hub hands
         this.hubGroup.visible = false;
-        if (this.handAvatars) {
-            this.handAvatars.Left.group.visible = false;
-            this.handAvatars.Right.group.visible = false;
-            this.handAvatars.Left.reticle.visible = false;
-            this.handAvatars.Right.reticle.visible = false;
-        }
+        ['Left', 'Right'].forEach(side => {
+            if (this.handAvatars && this.handAvatars[side]) {
+                this.handAvatars[side].group.visible = false;
+                if (this.handAvatars[side].laserGroup) this.handAvatars[side].laserGroup.visible = false;
+                if (this.handAvatars[side].reticleGroup) this.handAvatars[side].reticleGroup.visible = false;
+            }
+        });
 
         // Show game HUD
         document.getElementById('hub-overlay').style.display = 'none';
@@ -451,15 +554,15 @@ class VRHub {
 
         // Show Holo-Deck & Hub hands
         this.hubGroup.visible = true;
-        if (this.handAvatars) {
-            this.handAvatars.Left.group.visible = true;
-            this.handAvatars.Right.group.visible = true;
-        }
+        ['Left', 'Right'].forEach(side => {
+            if (this.handAvatars && this.handAvatars[side]) {
+                this.handAvatars[side].group.visible = true;
+            }
+        });
         this.camera.position.set(0, 0, 0);
 
         // Update HUD
         document.getElementById('hub-overlay').style.display = 'flex';
-        document.getElementById('game-hud').style.display = 'none';
         document.getElementById('game-hud').style.display = 'none';
     }
 
@@ -501,86 +604,167 @@ class VRHub {
         const handsSeen = { Left: false, Right: false };
         let anyHover = null;
 
-        // Update Hand Avatars with 3D position & true orientation
+        // Update Hand Avatars with 3D position & precision laser pointing
         for (const hand of trackingData.hands) {
             const avatar = this.handAvatars ? this.handAvatars[hand.label] : null;
             if (!avatar) continue;
 
             handsSeen[hand.label] = true;
 
-            const worldX = hand.screenX * 3.6;
-            const worldY = hand.screenY * 2.6 - 0.2;
-            const worldZ = -2.8 - (hand.palm.z || 0) * 3;
-            avatar.group.position.lerp(new THREE.Vector3(worldX, worldY, worldZ), 0.55);
+            // 1. Target 3D Hand Position (from filtered palm)
+            const worldX = hand.screenX * 3.4;
+            const worldY = hand.screenY * 2.4 - 0.15;
+            const worldZ = -2.6 - (hand.palm.z || 0) * 2.5;
+            avatar.group.position.lerp(new THREE.Vector3(worldX, worldY, worldZ), 0.6);
 
-            // True Hand Orientation in 3D VR Hub
-            if (hand.orientation && hand.orientation.matrix) {
-                const rotMat = new THREE.Matrix4().fromArray(hand.orientation.matrix);
-                const targetQuat = new THREE.Quaternion().setFromRotationMatrix(rotMat);
-                avatar.group.quaternion.slerp(targetQuat, 0.45);
+            // 2. Precision Index Pointer Screen Position
+            const pointerX = hand.pointer ? hand.pointer.screenX : hand.screenX;
+            const pointerY = hand.pointer ? hand.pointer.screenY : hand.screenY;
+
+            // 3. Raycast through index pointer screen coordinates
+            const pointerRaycaster = new THREE.Raycaster();
+            pointerRaycaster.setFromCamera(new THREE.Vector2(pointerX, pointerY), this.camera);
+            const cardMeshes = this.gamePods.map(p => p.card);
+            const hits = pointerRaycaster.intersectObjects(cardMeshes);
+
+            let targetPoint = null;
+            let targetNormal = new THREE.Vector3(0, 0, 1);
+            let hitPod = null;
+
+            if (hits.length > 0) {
+                targetPoint = hits[0].point.clone();
+                if (hits[0].face) {
+                    targetNormal.copy(hits[0].face.normal).applyQuaternion(hits[0].object.quaternion);
+                }
+                hitPod = this.gamePods.find(p => p.card === hits[0].object);
+            } else {
+                // Magnetic proximity snap: check if ray is near any pod
+                let minPodDist = 1.35;
+                for (const pod of this.gamePods) {
+                    const podCenter = pod.group.position.clone().add(new THREE.Vector3(0, 0.4, 0));
+                    const distToRay = pointerRaycaster.ray.distanceToPoint(podCenter);
+                    if (distToRay < minPodDist) {
+                        minPodDist = distToRay;
+                        hitPod = pod;
+                        targetPoint = podCenter.clone().add(new THREE.Vector3(0, 0, 0.15));
+                        targetNormal.set(0, 0, 1).applyQuaternion(pod.group.quaternion);
+                        break;
+                    }
+                }
+                if (!targetPoint) {
+                    targetPoint = pointerRaycaster.ray.origin.clone().addScaledVector(pointerRaycaster.ray.direction, 8.5);
+                }
             }
 
-            // Finger articulation (pinch, fist, open)
+            // 4. Aim the hand model directly at the targetPoint!
+            const aimDir = targetPoint.clone().sub(avatar.group.position).normalize();
+            let normalVec = new THREE.Vector3(0, 0, 1);
+            if (hand.orientation && hand.orientation.normal) {
+                normalVec.set(hand.orientation.normal.x, hand.orientation.normal.y, hand.orientation.normal.z).normalize();
+            }
+            const sideVec = new THREE.Vector3().crossVectors(aimDir, normalVec).normalize();
+            const orthoNormal = new THREE.Vector3().crossVectors(sideVec, aimDir).normalize();
+            const aimMatrix = new THREE.Matrix4().makeBasis(sideVec, aimDir, orthoNormal);
+            const targetQuat = new THREE.Quaternion().setFromRotationMatrix(aimMatrix);
+            avatar.group.quaternion.slerp(targetQuat, 0.55);
+
+            // 5. Articulate fingers with real curls!
+            if (hand.curls) {
+                const c = hand.curls;
+                // Thumb
+                avatar.fingers[0].root.rotation.x = c.thumb * 0.4;
+                avatar.fingers[0].distGroup.rotation.x = c.thumb * 0.8;
+                // Index
+                avatar.fingers[1].root.rotation.x = c.index * 1.1;
+                avatar.fingers[1].distGroup.rotation.x = c.index * 1.2;
+                // Middle
+                avatar.fingers[2].root.rotation.x = c.middle * 1.2;
+                avatar.fingers[2].distGroup.rotation.x = c.middle * 1.3;
+                // Ring
+                avatar.fingers[3].root.rotation.x = c.ring * 1.2;
+                avatar.fingers[3].distGroup.rotation.x = c.ring * 1.3;
+                // Pinky
+                avatar.fingers[4].root.rotation.x = c.pinky * 1.1;
+                avatar.fingers[4].distGroup.rotation.x = c.pinky * 1.2;
+            }
+
+            // Core repulsor scale during pinch
             if (hand.isPinching) {
-                avatar.fingerRays[0].rotation.z = 0.5;
-                avatar.fingerRays[1].rotation.z = -0.3;
-                avatar.core.scale.set(1.4, 1.4, 1.4);
-            } else if (hand.isFist) {
-                avatar.fingerRays.forEach(f => f.rotation.x = 1.2);
-                avatar.core.scale.set(0.8, 0.8, 0.8);
+                avatar.core.scale.set(1.5, 1.5, 1.5);
             } else {
-                avatar.fingerRays.forEach(f => {
-                    f.rotation.x = 0;
-                    f.rotation.z = 0;
-                });
                 avatar.core.scale.set(1.0, 1.0, 1.0);
             }
 
-            // Laser Pointer Raycast towards game pods
-            const laserDir = new THREE.Vector3(0, 1, 0).applyQuaternion(avatar.group.quaternion).normalize();
-            const laserOrigin = avatar.group.position.clone();
-            const raycaster = new THREE.Raycaster(laserOrigin, laserDir);
-            const cardMeshes = this.gamePods.map(p => p.card);
-            const hits = raycaster.intersectObjects(cardMeshes);
+            // 6. Update Laser Beam from Index Fingertip to Target Point
+            const tipWorld = new THREE.Vector3();
+            if (avatar.indexTip) {
+                avatar.indexTip.getWorldPosition(tipWorld);
+            } else {
+                tipWorld.copy(avatar.group.position);
+            }
 
-            if (hits.length > 0) {
-                const hit = hits[0];
-                avatar.reticle.position.copy(hit.point);
-                avatar.reticle.position.z += 0.05;
-                avatar.reticle.visible = true;
+            const beamVec = targetPoint.clone().sub(tipWorld);
+            const beamDist = beamVec.length();
 
-                const pod = this.gamePods.find(p => p.card === hit.object);
-                if (pod) {
-                    anyHover = pod;
-                    if (this.hoveredPod !== pod) {
-                        this.hoveredPod = pod;
-                        if (window.soundFx) window.soundFx.playUiHover();
-                    }
-                    pod.group.position.y = pod.baseY + 0.35;
-                    pod.card.material.opacity = 1.0;
+            avatar.laserGroup.position.copy(tipWorld).addScaledVector(beamVec, 0.5);
+            avatar.laserGroup.lookAt(targetPoint);
+            avatar.laserGroup.rotateX(Math.PI / 2);
+            avatar.laserCore.scale.set(1, beamDist, 1);
+            avatar.laserAura.scale.set(1, beamDist, 1);
+            avatar.laserGroup.visible = true;
 
-                    // Mid-air Pinch to select!
-                    if (hand.isPinching && this.pinchCooldown <= 0) {
-                        this.pinchCooldown = 1.0;
-                        this.launchGame(pod.id);
-                    }
+            // 7. Reticle & Interaction Logic
+            if (hitPod) {
+                anyHover = hitPod;
+                avatar.reticleGroup.position.copy(targetPoint).addScaledVector(targetNormal, 0.05);
+                avatar.reticleGroup.lookAt(targetPoint.clone().add(targetNormal));
+                avatar.reticleGroup.visible = true;
+
+                // Animate reticle crosshair
+                avatar.reticleMid.rotation.z += delta * 3;
+                const pulse = 1.0 + Math.sin(performance.now() * 0.009) * 0.12;
+                avatar.reticleOuter.scale.set(pulse, pulse, pulse);
+
+                if (this.hoveredPod !== hitPod) {
+                    this.hoveredPod = hitPod;
+                    this.dwellTimer = 0;
+                    if (window.soundFx) window.soundFx.playUiHover();
+                }
+
+                // Elevate card
+                hitPod.group.position.y = THREE.MathUtils.lerp(hitPod.group.position.y, hitPod.baseY + 0.35, 0.25);
+                hitPod.card.material.opacity = 1.0;
+
+                // Dwell Progress (auto-select if held for 0.75s)
+                this.dwellTimer = (this.dwellTimer || 0) + delta;
+                const dwellPct = Math.min(1.0, this.dwellTimer / 0.75);
+                avatar.updateDwell(dwellPct);
+
+                // Check Triggers: Pinch, Dwell Complete, or Forward Push
+                const isForwardPush = hand.velocity && hand.velocity.z < -1.8;
+                if ((hand.isPinching || dwellPct >= 1.0 || isForwardPush) && this.pinchCooldown <= 0) {
+                    this.pinchCooldown = 1.2;
+                    this.launchGame(hitPod.id);
                 }
             } else {
-                avatar.reticle.visible = false;
+                avatar.reticleGroup.visible = false;
+                avatar.updateDwell(0);
+                this.dwellTimer = 0;
             }
         }
 
-        // Hide unseen hands
+        // Hide unseen hands and lasers
         ['Left', 'Right'].forEach(side => {
             if (!handsSeen[side] && this.handAvatars && this.handAvatars[side]) {
                 this.handAvatars[side].group.position.set(0, -99, 0);
-                this.handAvatars[side].reticle.visible = false;
+                if (this.handAvatars[side].laserGroup) this.handAvatars[side].laserGroup.visible = false;
+                if (this.handAvatars[side].reticleGroup) this.handAvatars[side].reticleGroup.visible = false;
             }
         });
 
         // Reset unhovered pods
         if (!anyHover && this.hoveredPod) {
-            this.hoveredPod.group.position.y = this.hoveredPod.baseY;
+            this.hoveredPod.group.position.y = THREE.MathUtils.lerp(this.hoveredPod.group.position.y, this.hoveredPod.baseY, 0.2);
             this.hoveredPod.card.material.opacity = 0.85;
             this.hoveredPod = null;
         }

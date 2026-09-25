@@ -267,9 +267,9 @@ class SaberStormGame {
                 if (hand.orientation && hand.orientation.matrix) {
                     const rotMat = new THREE.Matrix4().fromArray(hand.orientation.matrix);
                     const targetQuat = new THREE.Quaternion().setFromRotationMatrix(rotMat);
-                    // Blade points forward and upward along grip
+                    // Blade points forward and upward along natural grip
                     const tiltAxis = new THREE.Vector3(1, 0, 0);
-                    const offsetQuat = new THREE.Quaternion().setFromAxisAngle(tiltAxis, -Math.PI / 3.2);
+                    const offsetQuat = new THREE.Quaternion().setFromAxisAngle(tiltAxis, -Math.PI / 6);
                     targetQuat.multiply(offsetQuat);
                     saber.quaternion.slerp(targetQuat, 0.65);
                 } else {

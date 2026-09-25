@@ -79,12 +79,18 @@ class VisionTracker {
         this.isCalibrated = false;
         this.showMirror = true;
 
-        // Adaptive smoothing filters for hand positions and orientation
+        // Adaptive smoothing filters for hand positions, index pointer, and orientation
         this.filters = {
             Left: {
                 x: new OneEuroFilter(1.2, 0.08),
                 y: new OneEuroFilter(1.2, 0.08),
                 z: new OneEuroFilter(1.0, 0.08),
+                px: new OneEuroFilter(2.0, 0.05),
+                py: new OneEuroFilter(2.0, 0.05),
+                pz: new OneEuroFilter(1.2, 0.05),
+                tx: new OneEuroFilter(1.5, 0.1),
+                ty: new OneEuroFilter(1.5, 0.1),
+                tz: new OneEuroFilter(1.5, 0.1),
                 fx: new OneEuroFilter(1.5, 0.1),
                 fy: new OneEuroFilter(1.5, 0.1),
                 fz: new OneEuroFilter(1.5, 0.1),
@@ -96,6 +102,12 @@ class VisionTracker {
                 x: new OneEuroFilter(1.2, 0.08),
                 y: new OneEuroFilter(1.2, 0.08),
                 z: new OneEuroFilter(1.0, 0.08),
+                px: new OneEuroFilter(2.0, 0.05),
+                py: new OneEuroFilter(2.0, 0.05),
+                pz: new OneEuroFilter(1.2, 0.05),
+                tx: new OneEuroFilter(1.5, 0.1),
+                ty: new OneEuroFilter(1.5, 0.1),
+                tz: new OneEuroFilter(1.5, 0.1),
                 fx: new OneEuroFilter(1.5, 0.1),
                 fy: new OneEuroFilter(1.5, 0.1),
                 fz: new OneEuroFilter(1.5, 0.1),
@@ -286,60 +298,95 @@ class VisionTracker {
                 const pinchDist = Math.hypot(
                     thumbTip.x - indexTip.x,
                     thumbTip.y - indexTip.y,
-                    thumbTip.z - indexTip.z
+                    (thumbTip.z || 0) - (indexTip.z || 0)
                 );
-                const isPinching = pinchDist < 0.085;
+                const isPinching = pinchDist < 0.082;
 
-                // Open palm vs fist
-                const dIndex = Math.hypot(wrist.x - indexTip.x, wrist.y - indexTip.y);
-                const dMiddle = Math.hypot(wrist.x - middleTip.x, wrist.y - middleTip.y);
-                const dRing = Math.hypot(wrist.x - ringTip.x, wrist.y - ringTip.y);
-                const dPinky = Math.hypot(wrist.x - pinkyTip.x, wrist.y - pinkyTip.y);
-                const avgExtension = (dIndex + dMiddle + dRing + dPinky) / 4;
+                // Individual finger curl metrics (0 = straight/extended, 1 = tightly curled)
+                const getFingerCurl = (mcp, pip, dip, tip) => {
+                    const distTip = Math.hypot(wrist.x - tip.x, wrist.y - tip.y, (wrist.z || 0) - (tip.z || 0));
+                    const distMcp = Math.hypot(wrist.x - mcp.x, wrist.y - mcp.y, (wrist.z || 0) - (mcp.z || 0));
+                    const ratio = distTip / (distMcp || 1e-4);
+                    return Math.max(0, Math.min(1, (1.95 - ratio) / 0.95));
+                };
 
-                const isOpenPalm = avgExtension > 0.27;
-                const isFist = avgExtension < 0.16;
-                const isPointing = dIndex > 0.24 && dMiddle < 0.19 && dRing < 0.19 && dPinky < 0.19;
+                const thumbCurl = Math.max(0, Math.min(1, (0.16 - pinchDist) / 0.1));
+                const indexCurl = getFingerCurl(indexMcp, raw[6], raw[7], indexTip);
+                const middleCurl = getFingerCurl(middleMcp, raw[10], raw[11], middleTip);
+                const ringCurl = getFingerCurl(raw[13], raw[14], raw[15], ringTip);
+                const pinkyCurl = getFingerCurl(pinkyMcp, raw[18], raw[19], pinkyTip);
 
-                // Screen coordinates (Mirrored X so moving right in real life moves right in VR)
+                // Open palm vs fist vs dedicated pointing gesture
+                const avgExtension = (1 - indexCurl + (1 - middleCurl) + (1 - ringCurl) + (1 - pinkyCurl)) / 4;
+                const isOpenPalm = avgExtension > 0.65;
+                const isFist = avgExtension < 0.25;
+                // Pure Pointing: Index is straight/extended, other 3 fingers curled into palm
+                const isPointing = indexCurl < 0.35 && middleCurl > 0.45 && ringCurl > 0.45 && pinkyCurl > 0.45;
+
+                // Palm Screen Coordinates (Mirrored X so moving right in real life moves right in VR)
                 const rawScreenX = (1.0 - palm.x) * 2 - 1;
                 const rawScreenY = -(palm.y * 2 - 1);
                 const rawScreenZ = -(palm.z || 0) * 2;
 
-                // Apply OneEuroFilter for smooth, low-latency position
+                // Apply OneEuroFilter for smooth, low-latency palm position
                 const filter = this.filters[handLabel];
                 const screenX = filter.x.filter(rawScreenX, now);
                 const screenY = filter.y.filter(rawScreenY, now);
                 const screenZ = filter.z.filter(rawScreenZ, now);
 
+                // Dedicated Sub-Pixel Index Fingertip Screen Coordinates (for precision pointing/laser)
+                const rawPointerX = (1.0 - indexTip.x) * 2 - 1;
+                const rawPointerY = -(indexTip.y * 2 - 1);
+                const rawPointerZ = -(indexTip.z || 0) * 2;
+                const pointerScreenX = filter.px.filter(rawPointerX, now);
+                const pointerScreenY = filter.py.filter(rawPointerY, now);
+                const pointerScreenZ = filter.pz.filter(rawPointerZ, now);
+
+                // Index Finger Vector (from MCP knuckle to Tip)
+                let ix = (1.0 - indexTip.x) - (1.0 - indexMcp.x);
+                let iy = -indexTip.y - (-indexMcp.y);
+                let iz = -(indexTip.z || 0) - (-(indexMcp.z || 0));
+                const iLen = Math.hypot(ix, iy, iz) || 1e-4;
+                ix /= iLen; iy /= iLen; iz /= iLen;
+
                 // Compute true 3D hand orientation frame
-                // 1. Forward direction: Wrist to Knuckle center
+                // 1. Forward direction: Wrist to Knuckle center (along fingers)
                 let fx = (1.0 - knuckleCenter.x) - (1.0 - wrist.x);
                 let fy = -knuckleCenter.y - (-wrist.y);
                 let fz = -(knuckleCenter.z || 0) - (-(wrist.z || 0));
                 const fLen = Math.hypot(fx, fy, fz) || 1e-4;
                 fx /= fLen; fy /= fLen; fz /= fLen;
 
-                // 2. Transverse direction: Across knuckles (Pinky to Index)
-                let tx = (1.0 - indexMcp.x) - (1.0 - pinkyMcp.x);
-                let ty = -indexMcp.y - (-pinkyMcp.y);
-                let tz = -(indexMcp.z || 0) - (-(pinkyMcp.z || 0));
+                // 2. Transverse direction: Across knuckles (Pinky to Index for left, Index to Pinky for right in mirrored space)
+                let tx, ty, tz;
+                if (handLabel === 'Right') {
+                    tx = (1.0 - indexMcp.x) - (1.0 - pinkyMcp.x);
+                    ty = -indexMcp.y - (-pinkyMcp.y);
+                    tz = -(indexMcp.z || 0) - (-(pinkyMcp.z || 0));
+                } else {
+                    tx = (1.0 - pinkyMcp.x) - (1.0 - indexMcp.x);
+                    ty = -pinkyMcp.y - (-indexMcp.y);
+                    tz = -(pinkyMcp.z || 0) - (-(indexMcp.z || 0));
+                }
                 const tLen = Math.hypot(tx, ty, tz) || 1e-4;
                 tx /= tLen; ty /= tLen; tz /= tLen;
 
-                // 3. Normal direction: Cross product F x T
-                let nx = fy * tz - fz * ty;
-                let ny = fz * tx - fx * tz;
-                let nz = fx * ty - fy * tx;
+                // 3. Normal direction: Cross product T x F (facing out of palm)
+                let nx = ty * fz - tz * fy;
+                let ny = tz * fx - tx * fz;
+                let nz = tx * fy - ty * fx;
                 const nLen = Math.hypot(nx, ny, nz) || 1e-4;
                 nx /= nLen; ny /= nLen; nz /= nLen;
 
-                // Re-orthogonalize F = T x N for strict 90° orthogonality
-                fx = ty * nz - tz * ny;
-                fy = tz * nx - tx * nz;
-                fz = tx * ny - ty * nx;
+                // Re-orthogonalize T = F x N for strict 90° orthogonality
+                tx = fy * nz - fz * ny;
+                ty = fz * nx - fx * nz;
+                tz = fx * ny - fy * nx;
 
                 // Smooth orientation vectors with OneEuroFilter
+                const stx = filter.tx.filter(tx, now);
+                const sty = filter.ty.filter(ty, now);
+                const stz = filter.tz.filter(tz, now);
                 const sfx = filter.fx.filter(fx, now);
                 const sfy = filter.fy.filter(fy, now);
                 const sfz = filter.fz.filter(fz, now);
@@ -347,24 +394,20 @@ class VisionTracker {
                 const sny = filter.ny.filter(ny, now);
                 const snz = filter.nz.filter(nz, now);
 
-                // Side vector S = N x F
-                let sx = sny * sfz - snz * sfy;
-                let sy = snz * sfx - snx * sfz;
-                let sz = snx * sfy - sny * sfx;
-                const sLen = Math.hypot(sx, sy, sz) || 1e-4;
-                sx /= sLen; sy /= sLen; sz /= sLen;
+                // Construct Three.js Column-Major 4x4 matrix:
+                // Column 0 (Local X) = Lateral across palm (stx, sty, stz)
+                // Column 1 (Local Y) = Forward along fingers (sfx, sfy, sfz)
+                // Column 2 (Local Z) = Normal out of palm (snx, sny, snz)
+                const matrix = [
+                    stx, sty, stz, 0,
+                    sfx, sfy, sfz, 0,
+                    snx, sny, snz, 0,
+                    0, 0, 0, 1
+                ];
 
                 const pitch = Math.atan2(sfy, Math.hypot(sfx, sfz));
                 const yaw = Math.atan2(sfx, -sfz);
-                const roll = Math.atan2(sy, sny);
-
-                // Construct 4x4 rotation matrix
-                const matrix = [
-                    sx, sy, sz, 0,
-                    snx, sny, snz, 0,
-                    sfx, sfy, sfz, 0,
-                    0, 0, 0, 1
-                ];
+                const roll = Math.atan2(sty, stx);
 
                 // Velocity calculation
                 let vel = { x: 0, y: 0, z: 0, speed: 0 };
@@ -395,6 +438,19 @@ class VisionTracker {
                     isOpenPalm,
                     isFist,
                     isPointing,
+                    curls: {
+                        thumb: thumbCurl,
+                        index: indexCurl,
+                        middle: middleCurl,
+                        ring: ringCurl,
+                        pinky: pinkyCurl
+                    },
+                    pointer: {
+                        screenX: pointerScreenX,
+                        screenY: pointerScreenY,
+                        screenZ: pointerScreenZ,
+                        dir: { x: ix, y: iy, z: iz }
+                    },
                     velocity: vel,
                     screenX,
                     screenY,
@@ -404,7 +460,7 @@ class VisionTracker {
                     orientation: {
                         forward: { x: sfx, y: sfy, z: sfz },
                         normal: { x: snx, y: sny, z: snz },
-                        side: { x: sx, y: sy, z: sz },
+                        side: { x: stx, y: sty, z: stz },
                         pitch,
                         yaw,
                         roll,
@@ -455,6 +511,12 @@ class VisionTracker {
                 extHand.screenX += entry.vel.x * dt * 0.6 * decay;
                 extHand.screenY += entry.vel.y * dt * 0.6 * decay;
                 extHand.screenZ += entry.vel.z * dt * 0.6 * decay;
+                if (extHand.pointer) {
+                    extHand.pointer = { ...extHand.pointer };
+                    extHand.pointer.screenX += entry.vel.x * dt * 0.6 * decay;
+                    extHand.pointer.screenY += entry.vel.y * dt * 0.6 * decay;
+                    extHand.pointer.screenZ += entry.vel.z * dt * 0.6 * decay;
+                }
                 extHand.isExtrapolated = true;
                 this.hands.push(extHand);
             }
@@ -659,18 +721,31 @@ class VisionTracker {
                 ctx.stroke();
             }
 
-            ctx.shadowBlur = 0;
+            // Pointer crosshair indicator
+            if (hand.pointer) {
+                const px = ((hand.pointer.screenX + 1) / 2) * w;
+                const py = ((-hand.pointer.screenY + 1) / 2) * h;
+                ctx.strokeStyle = hand.isPointing ? '#ffff00' : boneColor;
+                ctx.lineWidth = hand.isPointing ? 2 : 1;
+                ctx.beginPath();
+                ctx.arc(px, py, hand.isPointing ? 9 : 5, 0, Math.PI * 2);
+                ctx.stroke();
+                if (hand.isPointing) {
+                    ctx.beginPath();
+                    ctx.moveTo(px - 12, py); ctx.lineTo(px + 12, py);
+                    ctx.moveTo(px, py - 12); ctx.lineTo(px, py + 12);
+                    ctx.stroke();
+                }
+            }
+
             ctx.shadowBlur = 0;
             ctx.fillStyle = boneColor;
             ctx.font = '10px monospace';
             const extraTag = hand.isExtrapolated ? ' [EXTRAP]' : '';
             const pinchTag = hand.isPinching ? ' [PINCH]' : '';
             const fistTag = hand.isFist ? ' [FIST]' : '';
-            ctx.fillText(
-                hand.label.toUpperCase() + extraTag + pinchTag + fistTag,
-                lx - 30,
-                ly - 16
-            );
+            const pointTag = hand.isPointing ? ' [POINT]' : '';
+            ctx.fillText(`${hand.label.toUpperCase()}${pointTag}${pinchTag}${fistTag}${extraTag}`, lx - 25, ly - 16);
         }
 
         // Draw head tracking box
